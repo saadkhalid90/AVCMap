@@ -8,6 +8,7 @@
   <script src="//d3js.org/topojson.v1.min.js"></script>
   <script src='https://api.mapbox.com/mapbox-gl-js/v1.8.1/mapbox-gl.js'></script>
   <link href='https://api.mapbox.com/mapbox-gl-js/v1.8.1/mapbox-gl.css' rel='stylesheet' />
+  <link href="https://fonts.googleapis.com/css?family=Montserrat|Roboto|Roboto+Condensed&display=swap" rel="stylesheet">
   <style>
     body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
     #map {
@@ -30,6 +31,38 @@
       padding: 5px;
     }
 
+    div.controls {
+      position: fixed;
+      background-color: rgb(80, 80, 80, 0.7);
+      top: 0;
+      height: 100%;
+      width: 15%;
+      z-index: 2;
+    }
+
+    div#map {
+      z-index: 1;
+    }
+
+    .filterContain {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    label.filterLabel {
+      color: #FFFF00;
+      padding: 2px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 15px;
+    }
+    label.optionLabel {
+      color: #BDBDBD;
+      padding: 1px;
+      font-family: 'Roboto', sans-serif;
+      font-size: 14px;
+    }
+
     .tooltipTitle {
       font-size: bold;
     }
@@ -37,6 +70,21 @@
 </head>
 
 <body>
+  <div class="controls">
+    <div class="selectCategory filterContain">
+      <label class = "filterLabel" for="selectCategory">Value Chain Actor</label>
+      <select id="selectCategory" name="Select Value Chain actor">
+        <option value="Farmer.csv">Farmer</option>
+        <option value="Retailer.csv">Retailer</option>
+        <option value="ColdStorage.csv">Cold Storage</option>
+        <option value="Middleman.csv">Middleman</option>
+      </select>
+    </div>
+    <div class="distFilterDiv filterContain">
+    </div>
+    <div class="dateFilterDiv filterContain"></div>
+
+  </div>
   <div id="map"></div>
   <script>
 
@@ -89,8 +137,64 @@
 
     const url = "Farmer.csv";
 
-    async function readAndDraw(){
-      const farmerData = await d3.csv(url);
+    const removeSVGContent = (svgSelect) => {
+      svgSelect.selectAll('*').remove();
+    }
+
+    async function readAndDraw(url, renderDelay){
+      // remove all the elements within teh SVG
+      removeSVGContent(svg);
+
+      const vcData = await d3.csv(url);
+
+      const unique = (value, index, self) => {
+        return index === self.indexOf(value);
+      }
+      const getUniqVals = (field, data) => data.map(d => d[field]).filter(unique).sort();
+
+
+      const uniqDistricts = getUniqVals('District', vcData);
+      const uniqDates = getUniqVals('today', vcData);
+
+      const controlDiv = d3.select('div.controls');
+
+      const appendDistFilter = (filterDivClass, label, uniqueData, className) => {
+        // make a selection and remove all pre-exisitng elements
+        const filterDiv = controlDiv.select(`div.${filterDivClass}`);
+        filterDiv.selectAll('*').remove();
+
+        filterDiv.append('label')
+                .classed('filterLabel', true)
+                .html(label)
+
+        const rmSpace = (text) => text.replace(" ", "-");
+
+        const filterChkDiv = filterDiv
+                              .selectAll('input')
+                              .data(uniqueData)
+                              .enter()
+                              .append('div');
+
+        filterChkDiv
+          .append('input')
+          .attr('id', d => rmSpace(d))
+          .attr('class', className)
+          .classed('checkInput', true)
+          .attr('type', 'checkbox')
+          .attr('value', d => d)
+          .attr('name', d => d)
+
+        filterChkDiv
+          .append('label')
+          .classed('optionLabel', true)
+          .attr('for', d => rmSpace(d))
+          .html(d => d);
+      }
+
+      appendDistFilter('distFilterDiv', 'District Filter', uniqDistricts, 'District');
+      appendDistFilter('dateFilterDiv', 'Date Filter', uniqDates, 'Date');
+
+
       async function readGeoData(url, accessor){
         const geoData = await d3.json(url);
         return topojson.feature(geoData, geoData.objects[accessor]).features;
@@ -111,7 +215,7 @@
                         })
 
       const dots = svg.selectAll("circle.dot")
-                    .data(farmerData)
+                    .data(vcData)
                     .enter()
                     .append("circle")
                     .classed("dot", true)
@@ -122,7 +226,6 @@
                       'stroke': 'grey',
                       'stroke-width': 0.5
                     })
-                    .attr("r", 6)
 
 
 
@@ -136,6 +239,11 @@
               cx: d => d3Projection([d.Coord_Lon, d.Coord_Lat])[0],
               cy: d => d3Projection([d.Coord_Lon, d.Coord_Lat])[1]
             })
+            .transition()
+            .delay(renderDelay)
+            .duration(750)
+            .attr("r", 6)
+
       }
 
       // re-render our visualization whenever the view changes
@@ -175,11 +283,77 @@
         d3.select(container).select('div.tooltip').remove();
       }
 
+      d3.selectAll('input.checkInput').on('input', function(d, i){
+        const value = this.value
+        console.log(d3.select(this).attr('class'));
+        className = d3.select(this).attr('class');
+
+        if (className == 'District checkInput'){
+          if (filtObj.district.includes(value)){
+            filtObj.district = filtObj.district.filter(d => d != value);
+          }
+          else {
+            filtObj.district.push(value);
+          }
+
+        }
+        else {
+          if (filtObj.date.includes(value)){
+            filtObj.date = filtObj.date.filter(d => d != value);
+          }
+          else {
+            filtObj.date.push(value);
+          }
+
+        }
+        filterCircles(filtObj.district, filtObj.date);
+      })
+
       // render our initial visualization
       render()
     }
 
-    readAndDraw();
+    readAndDraw('Farmer.csv', 1500);
+
+    const filtObj = {
+      district: [],
+      date: []
+    }
+
+    d3.select('#selectCategory').on('input', function(d, i){
+      // initialize and draw with the data from the selected value chain actor
+      readAndDraw(this.value, 500);
+
+      // reset the filter arrays
+      filtObj.district = [];
+      filtObj.date = [];
+
+    })
+
+    // d3.selectAll('input.checkInput').on('input', function(d, i){
+    //   console.log(this.value);
+    //   console.log('event_CB');
+    // })
+
+    const filterCircles = (distArr, dateArr) => {
+      const circles = d3.selectAll('circle');
+      circles.filter(filtFunc(distArr, dateArr, true))
+            .transition()
+            .attr('r', 0);
+
+      circles.filter(filtFunc(distArr, dateArr, false))
+            .transition()
+            .attr('r', 6);
+    }
+
+    function filtFunc(distArr, dateArr, negate){
+      return function(d, i){
+        const distLog = distArr.length == 0 ? 1 : distArr.includes(d.District);
+        const dateLog = dateArr.length == 0 ? 1 : dateArr.includes(d.today);
+
+        return negate ? !(distLog & dateLog) : (distLog & dateLog);
+      }
+    }
 
   </script>
 </body>
