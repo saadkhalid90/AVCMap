@@ -3,10 +3,11 @@
   <meta charset="utf-8">
   <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
   <script src="//d3js.org/topojson.v1.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <script src="https://d3js.org/d3-selection-multi.v1.min.js"></script>
+  <script src="//d3js.org/topojson.v1.min.js"></script>
   <script src='https://api.mapbox.com/mapbox-gl-js/v1.8.1/mapbox-gl.js'></script>
   <link href='https://api.mapbox.com/mapbox-gl-js/v1.8.1/mapbox-gl.css' rel='stylesheet' />
-
   <style>
     body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
     #map {
@@ -72,50 +73,80 @@
       const getD3projScal = (tileSize, zoom) => (tileSize) * 0.5 / Math.PI * Math.pow(2, zoom);
       const scale = getD3projScal(512, zoom);
 
-      const d3projection = d3.geo.mercator()
+      const projection = d3.geoMercator()
         .center([center.lng, center.lat])
         .translate([bbox.width/2, bbox.height/2])
         .scale(scale);
 
-      return d3projection;
+        console.log(center);
+        console.log(bbox);
+        console.log(scale);
+        console.log(projection);
+
+      return projection;
     }
     // calculate the original d3 projection
     let d3Projection = getD3();
+    console.log(d3Projection);
 
-    const path = d3.geo.path()
+    const path = d3.geoPath()
 
-    var url = "Farmer.csv";
-    d3.csv(url, function(err, data) {
-      //console.log(data[0], getLL(data[0]), project(data[0]))
-      var dots = svg.selectAll("circle.dot")
-        .data(data)
+    const url = "Farmer.csv";
 
-      dots.enter().append("circle").classed("dot", true)
-      .attr("r", 1)
-      .style({
-        fill: "yellow",
-        "fill-opacity": 0.5,
-        stroke: "grey",
-        "stroke-width": .5
-      })
-      .transition().duration(1000)
-      .attr("r", 6)
+    async function readAndDraw(){
+      const farmerData = await d3.csv(url);
+      async function readGeoData(url, accessor){
+        const geoData = await d3.json(url);
+        return topojson.feature(geoData, geoData.objects[accessor]).features;
+      }
+
+      const appleMap = await d3.json('AppleVC.topojson');
+      const appTehsils = await readGeoData('AppleVC.topoJSON', 'AppleVC');
+
+      console.log(farmerData);
+      console.log(appTehsils);
+
+      const tehsils = svg.selectAll("path.tehsil")
+                        .data(appTehsils)
+                        .enter()
+                        .append('path')
+                        .attr('class', 'tehsil')
+                        .styles({
+                          'fill': '#212121',
+                          'fill-opacity': 0.0
+                        })
+
+      const dots = svg.selectAll("circle.dot")
+                    .data(farmerData)
+                    .enter()
+                    .append("circle")
+                    .classed("dot", true)
+                    .attr("r", 1)
+                    .styles({
+                      'fill': '#FFFF00',
+                      'fill-opacity': 0.5,
+                      'stroke': 'grey',
+                      'stroke-width': 0.5
+                    })
+                    .attr("r", 6)
+
+
 
       function render() {
         d3Projection = getD3();
         path.projection(d3Projection)
 
-        dots
-        .attr({
-          cx: function(d) {
-            var x = d3Projection([d.Coord_Lon, d.Coord_Lat])[0];
-            return x
-          },
-          cy: function(d) {
-            var y = d3Projection([d.Coord_Lon, d.Coord_Lat])[1];
-            return y
-          },
-        })
+        console.log(d3Projection);
+
+        console.log(d3Projection([70, 60]));
+        console.log(dots.data());
+
+        tehsils.attr('d', d => path(d));
+
+        dots.attrs({
+              cx: d => d3Projection([d.Coord_Lon, d.Coord_Lat])[0],
+              cy: d => d3Projection([d.Coord_Lon, d.Coord_Lat])[1]
+            })
       }
 
       // re-render our visualization whenever the view changes
@@ -158,8 +189,9 @@
 
       // render our initial visualization
       render()
-    })
+    }
 
+    readAndDraw();
 
   </script>
 </body>
